@@ -11,7 +11,6 @@ import configparser
 
 config = configparser.ConfigParser()
 config.read('config.ini')
-test = False
 RICHLIST_START = 1                                          #For the richlist
 RICHLIST_END = 11                                           #TOP1000 = page 10
 DATABASE_FILE = 'address_db_mtgox.db'                       #DB file. Will not be created.
@@ -24,12 +23,6 @@ TWITTER_CONSUMER_KEY = config['TWITTER']['consumer_key']
 TWITTER_CONSUMER_SECRET = config['TWITTER']['consumer_secret']
 TWITTER_ACCESS_TOKEN_KEY = config['TWITTER']['access_token_key']
 TWITTER_ACCESS_TOKEN_SECRET = config['TWITTER']['access_token_secret']
-
-if test == True:
-    RICHLIST_START = 1 
-    RICHLIST_END = 11 #TOP 1000
-    DATABASE_FILE = 'address_db.db'
-    MAX_UPDATE = 1001
 
 def get_balance ( account ):
     main_api = 'https://blockchain.info/rawaddr/'
@@ -222,7 +215,7 @@ def runrunrun():
   letshitrun()
   c.close()
   conn.close()
-  print ("next run in " + UPDATE_INTERVAL + "seconds.")
+  print ("next run in " + str(UPDATE_INTERVAL) + "seconds.")
 
 # already_dumped = 197946 - sum 
 # text = u'\U0001F4B0' + 'Mt.Gox still has ' + str(sum) + ' BTC left to sell! Already dumped: ' + str(already_dumped) + 'BTC! No recent coin movements!' + u'\U0001F4B0'
