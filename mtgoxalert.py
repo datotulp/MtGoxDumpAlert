@@ -8,6 +8,7 @@ import datetime
 import sqlite3
 import threading
 import configparser
+import gc
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -204,6 +205,7 @@ def letshitrun():
         twitter_post_sum()
     else: 
         print("no sum update (wrong time)")
+    gc.collect() #garbage collector
 
 def runrunrun():
   conn = sqlite3.connect(DATABASE_FILE, check_same_thread = False)
