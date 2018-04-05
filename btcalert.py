@@ -10,14 +10,13 @@ import configparser
 
 config = configparser.ConfigParser()
 config.read('config.ini')
-RICHLIST_START = 1                                          #For the richlist
-RICHLIST_END = 11                                           #TOP1000 = page 10
-DATABASE_FILE = 'address_db.db'                             #DB file. Will not be created.
-MAX_UPDATE = 1000                                           #How many balances to update max.
-UPDATE_INTERVAL = 60*15                                     #How often to run the check. Interval in seconds.
-POST_HOUR = 18                                              #When to post the daily update
-POST_MINUTE_MIN = 1                                         #When to post the daily update          
-POST_MINUTE_MAX = POST_MINUTE_MIN + (UPDATE_INTERVAL/60)    #Do not change this
+RICHLIST_START = 1                                              #For the richlist
+RICHLIST_END = 11                                               #TOP1000 = page 10
+DATABASE_FILE = 'address_db.db'                                 #DB file. Will not be created.
+MAX_UPDATE = 2000                                               #How many balances to update max.
+UPDATE_INTERVAL = 60*60*2                                       #How often to run the check. Interval in seconds.
+UPDATE_MINUTE_MIN = 1                                           #When to post the daily update          
+UPDATE_MINUTE_MAX = UPDATE_MINUTE_MIN + (UPDATE_INTERVAL/60)    #Do not change this
 TWITTER_CONSUMER_KEY = config['TWITTER']['consumer_key']
 TWITTER_CONSUMER_SECRET = config['TWITTER']['consumer_secret']
 TWITTER_ACCESS_TOKEN_KEY = config['TWITTER']['access_token_key']
@@ -42,7 +41,7 @@ class btc:
             lo_db.update(address[0], balance, balance_old)
             i = i+1
             if i > MAX_UPDATE:
-                print(i, "balances updated.")
+                print(i, "balances updated, max update param reached.")
                 break
         print(i, "balances updated.")
 
@@ -71,14 +70,6 @@ class twt:
         self.api.PostUpdate(post)
         print(post)
 
-    def post_sum( self ):
-        lo_db = db()
-        sum = int(lo_db.richlist_get_sum())
-        already_dumped = 197946 - sum 
-        post = u'\U0001F4B0' + 'Mt.Gox still has ' + str(sum) + ' BTC left to sell! Already dumped: ' + str(already_dumped) + ' BTC!' + u'\U0001F4B0' + "\n" + twt.get_output_text_for_hours_since_dump()
-        self.api.PostUpdate(post)
-        print(post)
-
     def post_whatever ( self, whatever ):
         self.api.PostUpdate(whatever)
         print(whatever)
@@ -94,8 +85,6 @@ class twt:
         return text
 
 class db:
-    conn = None
-    c = None
 
     def __init__(self):
         self.conn = sqlite3.connect(DATABASE_FILE)
@@ -104,7 +93,7 @@ class db:
     def entry(self, address):
         timestamp = time.time()
         timestamp_v = datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
-        self.c.execute("INSERT INTO btcaddresses (btc_address, insert_time, insert_time_v) VALUES(?, ?, ?)", (address, timestamp, timestamp_v))
+        self.c.execute("INSERT OR IGNORE INTO btcaddresses (btc_address, insert_time, insert_time_v) VALUES(?, ?, ?)", (address, timestamp, timestamp_v))
         self.conn.commit()
 
     def sum_entry(self):
@@ -142,6 +131,11 @@ class db:
         self.conn.commit()
         print("!!DB Cleared!! - ", DATABASE_FILE)
 
+    def clean_low_balances(self):
+        self.c.execute("DELETE FROM btcaddresses WHERE btc_balance_old < 1")
+        self.conn.commit()
+        print("Low balances cleared from DB.")
+
     def read(self):
         self.conn = sqlite3.connect(DATABASE_FILE, check_same_thread = False)
         self.c = self.conn.cursor()
@@ -159,12 +153,12 @@ class db:
             return None
 
     def richlist_write_to_db(self):
-        self.clear()
+        #self.clear()
         richlist = btc.richlist_parse_from_website() #get from website
         i = 1
         for address in richlist:
-            print(i, ":", "Inserting: ", address)
             self.entry(address)
+            print(i, ":", "Inserting: ", address)
             i = i + 1
 
     def richlist_get_sum(self):
@@ -178,11 +172,14 @@ def letshitrun():
     min = 0
     max = 0
     diff = 0
-
     lo_db = db()
+    timestamp = time.time()
+    minute = datetime.datetime.fromtimestamp(timestamp).minute + (datetime.datetime.fromtimestamp(timestamp).hour * 60)
+
     richlist = lo_db.read()
     btc.richlist_get_balances ( richlist )
     richlist = lo_db.read()
+
     for row in richlist:
         diff = int(row[1]) - int(row[2])
         if min > diff:
@@ -195,6 +192,11 @@ def letshitrun():
             print("https://blockchain.info/address/", row[0], "\tChange: ", int(row[1]) - int(row[2]), sep='')
 
     print("biggest +: ", str(max), "\tdump -: ", str(min))
+
+    if ( minute >= UPDATE_MINUTE_MIN and minute < UPDATE_MINUTE_MAX ): # UPDATE the richlist-time (once a day)
+        print("Update Time!!")
+        lo_db.richlist_write_to_db()
+        lo_db.clean_low_balances()
 
 def runrunrun():
   starttime=time.time()
@@ -211,13 +213,3 @@ def runrunrun():
     gc.collect()
 
 runrunrun()
-# lo_db = db()
-# lo_db.richlist_write_to_db()
-
-# def richlist_write_to_file(rich_list,filename):
-#     res = rich_list
-#     csvfile = filename
-#     with open(csvfile, "w") as output:
-#         writer = csv.writer(output, lineterminator='\n')
-#         for val in res:
-#             writer.writerow([val])
