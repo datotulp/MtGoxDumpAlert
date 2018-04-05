@@ -17,10 +17,11 @@ MAX_UPDATE = 2000                                               #How many balanc
 UPDATE_INTERVAL = 60*60*2                                       #How often to run the check. Interval in seconds.
 UPDATE_MINUTE_MIN = 1                                           #When to post the daily update          
 UPDATE_MINUTE_MAX = UPDATE_MINUTE_MIN + (UPDATE_INTERVAL/60)    #Do not change this
-TWITTER_CONSUMER_KEY = config['TWITTER']['consumer_key']
-TWITTER_CONSUMER_SECRET = config['TWITTER']['consumer_secret']
-TWITTER_ACCESS_TOKEN_KEY = config['TWITTER']['access_token_key']
-TWITTER_ACCESS_TOKEN_SECRET = config['TWITTER']['access_token_secret']
+DUMP_TRESHHOLD = 2500
+TWITTER_CONSUMER_KEY = config['TESTSETTINGS']['consumer_key']
+TWITTER_CONSUMER_SECRET = config['TESTSETTINGS']['consumer_secret']
+TWITTER_ACCESS_TOKEN_KEY = config['TESTSETTINGS']['access_token_key']
+TWITTER_ACCESS_TOKEN_SECRET = config['TESTSETTINGS']['access_token_secret']
 
 class btc:
     @staticmethod
@@ -67,6 +68,11 @@ class twt:
 
     def post_dump ( self, address, amount ):
         post = u'\U000026A0' + "ALERT: Mt. Gox just moved " + str(amount) + "BTC!" + u'\U000026A0' + "\n" + str(address)
+        self.api.PostUpdate(post)
+        print(post)
+    
+    def post_move ( self, address, amount ):
+        post = u'\U000026A0' + "ALERT: https://blockchain.info/address/" + str(address) + "just moved " + str(amount) + " BTC!" + u'\U000026A0'
         self.api.PostUpdate(post)
         print(post)
 
@@ -188,8 +194,10 @@ def letshitrun():
         if max < diff:
             max = diff
         
-        if diff < -5000 or diff > 5000:
-            print("https://blockchain.info/address/", row[0], "\tChange: ", int(row[1]) - int(row[2]), sep='')
+        if diff < (-1 * DUMP_TRESHHOLD) or diff > DUMP_TRESHHOLD:
+            print("https://blockchain.info/address/", row[0], "\tChange: ", int(row[1]) - int(row[2]))
+            lo_twt = twt()
+            lo_twt.post_move(row[0], int(row[1]) - int(row[2])) # tweet out the big move!
 
     print("biggest +: ", str(max), "\tdump -: ", str(min))
 
