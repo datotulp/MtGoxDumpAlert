@@ -1,13 +1,12 @@
 import requests
 import twitter
 import re
-import gc
 import json
 import time
 import datetime
 import sqlite3
 import configparser
-import sys
+from threading import Thread
 
 #Global settings
 MODE_RICHLIST = True #enables the top1000 tracking
@@ -23,7 +22,7 @@ RICHLIST_END = 11                                               #TOP1000 = page 
 RICHLIST_DB_FILE = 'address_db.db'                              #DB file. Will not be created.
 MAX_UPDATE = 2000                                               #How many balances to update max.
 UPDATE_INTERVAL = 60*15                                         #How often to run the check. Interval in seconds.
-UPDATE_MINUTE_MIN = 240                                         #When to post the daily update          
+UPDATE_MINUTE_MIN = 256                                         #When to post the daily update          
 UPDATE_MINUTE_MAX = UPDATE_MINUTE_MIN + (UPDATE_INTERVAL/60)    #Do not change this
 DUMP_TRESHHOLD = 5000
 
@@ -143,8 +142,7 @@ class twt:
         print(post)
 
     def gox_post_sum( self ):
-        lo_db = db()
-        sum = int(lo_db.richlist_get_sum())
+        sum = int(db(GOX_DB_FILE).richlist_get_sum())
         already_dumped = 197946 - sum 
         post = u'\U0001F4B0' + 'Mt.Gox still has ' + str(sum) + ' BTC left to sell! Already dumped: ' + str(already_dumped) + ' BTC!' + u'\U0001F4B0' + "\n" + twt.get_output_text_for_hours_since_dump()
         self.api.PostUpdate(post)
@@ -163,8 +161,7 @@ class twt:
 
     @staticmethod
     def get_output_text_for_hours_since_dump():
-        lo_db = db()
-        hours = lo_db.sum_get_hours_since_latest_dump()
+        hours = db(GOX_DB_FILE).sum_get_hours_since_latest_dump()
         if hours is not None and hours < 337: #2 weeks
             text = "The last dump occured " + str(int(hours/24)) + " days and " + str(int(hours - (int(hours/24)*24))) + " hours ago."
         else: 
@@ -246,8 +243,8 @@ class db:
         i = 1
         for address in richlist:
             self.entry(address)
-            print(i, ":", "Inserting: ", address)
             i = i + 1
+        print(i, ":", "inserted: ")
 
     def richlist_get_sum(self):
         self.c.execute('SELECT SUM(BTC_BALANCE) FROM btcaddresses')
@@ -341,6 +338,8 @@ def runrunrun():
 MODE_RICHLIST = True
 MODE_GOXALERTER = True
 MODE_RUNINLOOP = 0
-
 UPDATE_INTERVAL = 60*5
+
+# t = Thread(target=runrunrun)
+# t.start()
 runrunrun()
