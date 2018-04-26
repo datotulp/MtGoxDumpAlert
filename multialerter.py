@@ -8,6 +8,24 @@ import sqlite3
 import configparser
 from threading import Thread
 
+#TODO:
+#DONE: batch sql updates into one
+#batch sql inserts
+#DONE: exception twitter doublepost 
+        # Traceback (most recent call last):
+        #   File "btcalert.py", line 345, in <module>
+        #     runrunrun()
+        #   File "btcalert.py", line 332, in runrunrun
+        #     goxdumpmonitor()
+        #   File "btcalert.py", line 317, in goxdumpmonitor
+        #     lo_twitter.gox_post_sum()
+        #   File "btcalert.py", line 148, in gox_post_sum
+        #     self.api.PostUpdate(post)
+        #   File "C:\Users\T1\AppData\Local\Programs\Python\Python36\lib\site-packages\python_twitter-3.4-py3.6.egg\twitter\api.py", line 1172, in PostUpdate
+        #   File "C:\Users\T1\AppData\Local\Programs\Python\Python36\lib\site-packages\python_twitter-3.4-py3.6.egg\twitter\api.py", line 4905, in _ParseAndCheckTwitter
+        #   File "C:\Users\T1\AppData\Local\Programs\Python\Python36\lib\site-packages\python_twitter-3.4-py3.6.egg\twitter\api.py", line 4925, in _CheckForTwitterError
+        # twitter.error.TwitterError: [{'code': 187, 'message': 'Status is a duplicate.'}]
+
 #Global settings
 MODE_RICHLIST = True #enables the top1000 tracking
 MODE_GOXALERTER = True #enables mtgox tracking / tracking of certain balances
@@ -21,10 +39,10 @@ RICHLIST_START = 1                                              #For the richlis
 RICHLIST_END = 11                                               #TOP1000 = page 10
 RICHLIST_DB_FILE = 'address_db.db'                              #DB file. Will not be created.
 MAX_UPDATE = 2000                                               #How many balances to update max.
-UPDATE_INTERVAL = 60*15                                         #How often to run the check. Interval in seconds.
+UPDATE_INTERVAL = 60*45                                         #How often to run the check. Interval in seconds.
 UPDATE_MINUTE_MIN = 256                                         #When to post the daily update          
 UPDATE_MINUTE_MAX = UPDATE_MINUTE_MIN + (UPDATE_INTERVAL/60)    #Do not change this
-DUMP_TRESHHOLD = 5000
+DUMP_TRESHHOLD = 10000
 
 #MtGox settings
 GOX_DB_FILE = 'address_db_mtgox.db'                                         #DB file. Will not be created.
@@ -81,11 +99,15 @@ class btc:
             print(data)  
             print('!!!JSON ERROR!!! (this should never happen..)')
             return False
+
+        new_richlist = []
         for address in richlist:
             i = i+1
             balance_old = address[1]
             balance = json_data[address[0]]['final_balance'] / ( 1000 * 1000 * 100 )
-            db().update(address[0], balance, balance_old)
+            new_item = (address[0], balance, balance_old)
+            new_richlist.append(new_item)       
+        db().update_many(new_richlist)
         print(i, "balances updated with multi-post method.")
         return True
 
@@ -138,26 +160,29 @@ class twt:
 
     def gox_post_dump ( self, address, amount ):
         post = u'\U000026A0' + "ALERT: Mt. Gox just moved " + str(amount) + "BTC!" + u'\U000026A0' + "\n" + str(address)
-        self.api.PostUpdate(post)
-        print(post)
+        self.post_execute(post)
 
     def gox_post_sum( self ):
         sum = int(db(GOX_DB_FILE).richlist_get_sum())
         already_dumped = 197946 - sum 
         post = u'\U0001F4B0' + 'Mt.Gox still has ' + str(sum) + ' BTC left to sell! Already dumped: ' + str(already_dumped) + ' BTC!' + u'\U0001F4B0' + "\n" + twt.get_output_text_for_hours_since_dump()
-        self.api.PostUpdate(post)
-        print(post)
+        self.post_execute(post)
 
     def post_move ( self, address, amount ):
         url = 'https://blockchain.info/address/' + str(address)
         shorturl = helpers.shorten_url(url)
         post = u'\U000026A0' + "ALERT: " + shorturl + " just moved " + str(amount) + " BTC!" + u'\U000026A0'
-        self.api.PostUpdate(post)
-        print(post)
+        self.post_execute(post)
 
     def post_whatever ( self, whatever ):
-        self.api.PostUpdate(whatever)
-        print(whatever)
+        self.post_execute(whatever)
+
+    def post_execute ( self, text ):
+        try:
+            self.api.PostUpdate(text)
+            print(text)
+        except twitter.error.TwitterError as e:
+            print(e.message)
 
     @staticmethod
     def get_output_text_for_hours_since_dump():
@@ -198,10 +223,25 @@ class db:
         else:
             return data
 
+    def update_many(self, new_richlist):
+        timestamp = time.time()
+        timestamp_v = datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+        check_indicator = 0
+        insert_array = []
+
+        for account in new_richlist:
+            address = account[0]
+            balance = account[1]
+            balance_old = account[2]
+            if balance_old is not None:
+                check_indicator = int(balance)-int(balance_old)
+            new_item  = (balance, timestamp, timestamp_v, balance_old, check_indicator, address)
+            insert_array.append(new_item)
+        self.c.executemany('UPDATE btcaddresses SET btc_balance=?,check_time=?,check_time_v=?,btc_balance_old=?,check_indicator=? WHERE btc_address = ?', insert_array)
+        self.conn.commit()
+        print("test")
+
     def update(self, address, balance, balance_old):
-        #self.conn = sqlite3.connect(DATABASE_FILE, check_same_thread = False)
-        #self.c = self.conn.cursor()
-        self.c.execute('SELECT * FROM btcaddresses')
         timestamp = time.time()
         timestamp_v = datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
         check_indicator = 0
@@ -217,7 +257,7 @@ class db:
         print("!!DB Cleared!! - ", self.db_file)
 
     def clean_low_balances(self):
-        self.c.execute("DELETE FROM btcaddresses WHERE btc_balance_old < 1")
+        self.c.execute("DELETE FROM btcaddresses WHERE btc_balance_old < 500")
         self.conn.commit()
         print("Low balances cleared from DB.")
 
@@ -335,11 +375,9 @@ def runrunrun():
     print ("Run Interval:" + str(UPDATE_INTERVAL) + " seconds. Remaining: " + str((UPDATE_INTERVAL - ((time.time() - starttime) % UPDATE_INTERVAL))) )
     time.sleep(UPDATE_INTERVAL - ((time.time() - starttime) % UPDATE_INTERVAL))
 
-MODE_RICHLIST = True
-MODE_GOXALERTER = True
-MODE_RUNINLOOP = 0
-UPDATE_INTERVAL = 60*5
+# MODE_RICHLIST = True
+# MODE_GOXALERTER = True
+# MODE_RUNINLOOP = 10
+# UPDATE_INTERVAL = 60*5
 
-# t = Thread(target=runrunrun)
-# t.start()
 runrunrun()
