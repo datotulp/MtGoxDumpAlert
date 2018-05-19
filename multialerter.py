@@ -33,6 +33,7 @@ MODE_RUNINLOOP = 0 #lets the program run in loop X times. 0 = infinite
 config = configparser.ConfigParser()
 config.read('config.ini')
 BITLY_ACCESS_TOKEN = config['BITLY']['access_token']
+ENABLE_TWITTER = True
 
 #Richlist settings
 RICHLIST_START = 1                                              #For the richlist
@@ -40,9 +41,9 @@ RICHLIST_END = 11                                               #TOP1000 = page 
 RICHLIST_DB_FILE = 'address_db.db'                              #DB file. Will not be created.
 MAX_UPDATE = 2000                                               #How many balances to update max.
 UPDATE_INTERVAL = 60*45                                         #How often to run the check. Interval in seconds.
-UPDATE_MINUTE_MIN = 256                                         #When to post the daily update          
+UPDATE_MINUTE_MIN = 1380                                        #When to post the daily update          
 UPDATE_MINUTE_MAX = UPDATE_MINUTE_MIN + (UPDATE_INTERVAL/60)    #Do not change this
-DUMP_TRESHHOLD = 10000
+DUMP_TRESHHOLD = 24999
 
 #MtGox settings
 GOX_DB_FILE = 'address_db_mtgox.db'                                         #DB file. Will not be created.
@@ -71,16 +72,18 @@ class btc:
 
     @staticmethod 
     def get_balance_multi ( dbfile ): #updates whole db
+
         main_api = 'https://blockchain.info/balance'
         addrlist = ''
         i = 0
-
+        print("GET_BALANCE_MULTI()->dbfile read")
         richlist = db(dbfile).read()
-
+        
         for address in richlist:
             addrlist = addrlist + '|' + str(address[0])
 
         try:
+            print("GET_BALANCE_MULTI()->request post 1")
             data = requests.post(main_api, data = {'active':addrlist})
             data.raise_for_status()
         except requests.exceptions.RequestException as e:  # This is the correct syntax
@@ -88,12 +91,14 @@ class btc:
             print("Request error. Tryin' again in 10 seconds..")
             time.sleep(10)
             try:
+                print("GET_BALANCE_MULTI()->request post 2")
                 data = requests.post(main_api, data = {'active':addrlist})
                 data.raise_for_status()
             except requests.exceptions.RequestException as e:
                 print("Request failed again. Quit this run.")
                 return False	
         try:
+            print("GET_BALANCE_MULTI()->json conversion")
             json_data = data.json()
         except ValueError: #JSONDecodeError 
             print(data)  
@@ -106,8 +111,9 @@ class btc:
             balance_old = address[1]
             balance = json_data[address[0]]['final_balance'] / ( 1000 * 1000 * 100 )
             new_item = (address[0], balance, balance_old)
-            new_richlist.append(new_item)       
-        db().update_many(new_richlist)
+            new_richlist.append(new_item)
+        print("GET_BALANCE_MULTI()->update db...")       
+        db(dbfile).update_many(new_richlist)
         print(i, "balances updated with multi-post method.")
         return True
 
@@ -159,7 +165,8 @@ class twt:
                         access_token_secret=self.ACCESS_TOKEN_SECRET)
 
     def gox_post_dump ( self, address, amount ):
-        post = u'\U000026A0' + "ALERT: Mt. Gox just moved " + str(amount) + "BTC!" + u'\U000026A0' + "\n" + str(address)
+        shorturl = helpers.shorten_url(str(address))
+        post = u'\U000026A0' + "ALERT: Mt. Gox just moved " + str(amount) + "BTC!" + u'\U000026A0' + "\n" + shorturl
         self.post_execute(post)
 
     def gox_post_sum( self ):
@@ -171,7 +178,7 @@ class twt:
     def post_move ( self, address, amount ):
         url = 'https://blockchain.info/address/' + str(address)
         shorturl = helpers.shorten_url(url)
-        post = u'\U000026A0' + "ALERT: " + shorturl + " just moved " + str(amount) + " BTC!" + u'\U000026A0'
+        post = u'\U00002755' + "Whale Move?: " + shorturl + " balance changed by: " + str(amount) + " BTC (not Mt.Gox!)." + u'\U00002755'
         self.post_execute(post)
 
     def post_whatever ( self, whatever ):
@@ -179,7 +186,8 @@ class twt:
 
     def post_execute ( self, text ):
         try:
-            self.api.PostUpdate(text)
+            if ENABLE_TWITTER == True:
+                self.api.PostUpdate(text)
             print(text)
         except twitter.error.TwitterError as e:
             print(e.message)
@@ -377,7 +385,8 @@ def runrunrun():
 
 # MODE_RICHLIST = True
 # MODE_GOXALERTER = True
-# MODE_RUNINLOOP = 10
+# MODE_RUNINLOOP = 30
+# ENABLE_TWITTER = False
 # UPDATE_INTERVAL = 60*5
 
 runrunrun()
